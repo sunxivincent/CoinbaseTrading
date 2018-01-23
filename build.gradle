@@ -1,0 +1,27 @@
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'org.springframework.boot'
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:1.5.9.RELEASE")
+    }
+}
+
+repositories {
+    maven { url "http://central.maven.org/maven2/"}
+    maven { url "http://repo1.maven.org/maven2/" }
+    maven { url "https://repo.spring.io/release/"}
+}
+
+dependencies {
+    compile 'org.slf4j:slf4j-api:1.7.12'
+    compile 'com.google.code.gson:gson:2.8.0'
+    compile group: 'com.google.guava', name: 'guava', version: '23.5-jre'
+    compile("org.springframework.boot:spring-boot-starter-web")
+    compile 'org.projectlombok:lombok:1.16.20'
+    testCompile 'junit:junit:4.12'
+}

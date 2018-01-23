@@ -1,0 +1,8 @@
+gdax:
+  api:
+    baseUrl: "https://api.gdax.com"
+    testUrl: "https://public.sandbox.gdax.com"
+  key: ""
+  secret: ""
+  passphrase: ""
+  enable: "false"
