@@ -23,5 +23,6 @@ dependencies {
     compile group: 'com.google.guava', name: 'guava', version: '23.5-jre'
     compile("org.springframework.boot:spring-boot-starter-web")
     compile 'org.projectlombok:lombok:1.16.20'
+    compile 'com.github.rholder:guava-retrying:2.0.0'
     testCompile 'junit:junit:4.12'
 }
