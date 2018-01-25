@@ -1,0 +1,46 @@
+class PriceElement {
+	double currency_unit
+	double unit_price
+	long timestamp
+	id
+	status
+}
+
+TreeSet <PriceElement> priceElements size 10, order by unit_price
+
+totalBtcValue = btc unit price * btc unit
+totalvalue = totalBtcValue + cash value
+double percent = totalBtcValue / totalvalue
+
+if percent > 80%
+	end program, manual decision
+if percent > 40%
+	for i in [0 , percent / 0.1)
+		priceElements.add (new PriceElement)
+else
+	boughtUnit = placeWithTotalCach(totalvalue * 40%, buy, currentBtcPrice - 0.1) // make sure this would be successful
+	for i in [0 , 4)
+		priceElements.add (new PriceElement)
+assert(8 >= priceElements.size() >= 4)
+
+schedule task run every 30 seconds {
+	update totalvalue
+	currentBtcPrice
+	find left PriceElement close to currentBtcPrice
+	find right PriceElement close to currentBtcPrice
+	if left == null
+		if priceElements.size < 10 || right == null || right.price - currentBtcPrice > buyThreshold
+			boughtUnit = placeWithTotalCach(totalvalue * 10%, buy, currentBtcPrice - 0.1)
+			add this element to priceElements
+			write to log
+		else
+			do nothing
+	else if priceElements.size < 4 // keep some btc orders ..
+		boughtUnit = placeWithTotalCach(totalvalue * 10%, buy, currentBtcPrice - 0.1)
+		add this element to priceElements
+		write to log
+	else if currentBtcPrice - left.unit_price > sellThreshold
+		sellUnit = sell(left.id, currentBtcPrice + 0.1)
+		calculate profit
+		write to log
+}
