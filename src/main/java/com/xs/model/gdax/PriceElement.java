@@ -1,11 +1,13 @@
 package com.xs.model.gdax;
 
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 @AllArgsConstructor
+@Getter
 public class PriceElement {
 	String id;
-	double currency_unit;
-	double unit_price;
+	double currencyUnit;
+	double unitPrice;
 	long timestamp;
 }

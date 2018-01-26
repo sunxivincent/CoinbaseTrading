@@ -5,6 +5,8 @@ import com.github.rholder.retry.Retryer;
 import com.github.rholder.retry.RetryerBuilder;
 import com.github.rholder.retry.StopStrategies;
 import com.github.rholder.retry.WaitStrategies;
+import com.google.common.collect.ImmutableMap;
+import com.xs.model.gdax.Fill;
 import com.xs.model.gdax.Order;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,8 +21,16 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 public class OrderService {
+	private static final double MIN_BUY_UNIT = 0.001;
 	private static final String ORDERS_ENDPOINT = "/orders";
-	private static final Retryer<Order> RETRYER = RetryerBuilder.<Order>newBuilder()
+	private static final String FILLS_ENDPOINT = "/fills";
+
+	private static final Retryer<Order> GENERAL_RETRYER = RetryerBuilder.<Order>newBuilder()
+		.retryIfRuntimeException()
+		.withWaitStrategy(WaitStrategies.exponentialWait(2000, TimeUnit.MILLISECONDS))
+		.withStopStrategy(StopStrategies.stopAfterAttempt(3))
+		.build();
+	private static final Retryer<List<Fill>> FILL_RETRYER = RetryerBuilder.<List<Fill>>newBuilder()
 		.retryIfRuntimeException()
 		.withWaitStrategy(WaitStrategies.exponentialWait(2000, TimeUnit.MILLISECONDS))
 		.withStopStrategy(StopStrategies.stopAfterAttempt(3))
@@ -39,12 +49,18 @@ public class OrderService {
 	}
 
 	public Order getOrder(String orderId) throws ExecutionException, RetryException {
-		return RETRYER.call(() -> gdaxTradingService.get(ORDERS_ENDPOINT + "/" + orderId,new ParameterizedTypeReference<Order>(){}));
+		return GENERAL_RETRYER.call(() -> gdaxTradingService.get(ORDERS_ENDPOINT + "/" + orderId,new ParameterizedTypeReference<Order>(){}));
+	}
+
+	public List<Fill> getFill(String orderId) throws ExecutionException, RetryException {
+		return FILL_RETRYER.call(() -> gdaxTradingService.getWithParams(
+			FILLS_ENDPOINT + "/" + orderId + "?order_id={order_id}", new ParameterizedTypeReference<List<Fill>>(){}, ImmutableMap.of("order_id", orderId)));
 	}
 
 	public Order placeLimitOrder(String productId, String side, double size, double price) throws ExecutionException, RetryException {
-		return RETRYER.call(() -> gdaxTradingService.post(ORDERS_ENDPOINT, new ParameterizedTypeReference<Order>(){},
-			new NewLimitOrder(productId, side, price, size)
+		double limitSize = Math.max(MIN_BUY_UNIT, size);
+		return GENERAL_RETRYER.call(() -> gdaxTradingService.post(ORDERS_ENDPOINT, new ParameterizedTypeReference<Order>(){},
+			new NewLimitOrder(productId, side, price, limitSize)
 		));
 	}
 
@@ -63,6 +79,7 @@ public class OrderService {
 			try {
 				Thread.sleep(1000);
 			} catch (InterruptedException e) {
+				log.error("sleep error");
 			}
 			placedOrder = getOrder(placedOrder.getId());
 			if (placedOrder.isSettled() && "done".equals(placedOrder.getStatus())) break;
@@ -81,6 +98,7 @@ public class OrderService {
 		private String type;
 		private double price;
 		private double size;
+		private boolean post_only;
 
 		public NewLimitOrder(String product_id, String side, double price, double size) {
 			this.product_id = product_id;
@@ -88,6 +106,7 @@ public class OrderService {
 			this.type = "limit";
 			this.price = price;
 			this.size = size;
+			this.post_only = true;
 		}
 	}
 }

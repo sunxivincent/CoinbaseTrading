@@ -21,31 +21,26 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class AccountService {
-	private static final Retryer<Void> RETRYER = RetryerBuilder.<Void>newBuilder()
+	private static final Retryer<List<Account>> RETRYER = RetryerBuilder.<List<Account>>newBuilder()
 		.retryIfRuntimeException()
 		.withWaitStrategy(WaitStrategies.fixedWait(300,TimeUnit.MILLISECONDS))
 		.withStopStrategy(StopStrategies.stopAfterAttempt(5))
 		.build();
 
 	private final GdaxTradingService gdaxTradingService;
-	private Map<String, Account> currencyToAccount;
 
 	public static final String ACCOUNTS_ENDPOINT = "/accounts";
 
 	@Autowired
 	public AccountService(GdaxTradingService gdaxTradingService) throws ExecutionException, RetryException {
 		this.gdaxTradingService = gdaxTradingService;
-		RETRYER.call(() -> {
-			List<Account> accounts = gdaxTradingService.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){});
-			currencyToAccount = accounts.stream().collect(Collectors.toMap(Account::getCurrency, a -> a));
-			return null;
-		});
-		if (CollectionUtils.isEmpty(currencyToAccount)) {
-			throw new IllegalArgumentException("currencyToAccount is null");
-		}
 	}
 
-	public Map<String, Account> getCurrencyToAccount() {
-		return currencyToAccount;
+	public Map<String, Account> getAccounts() throws ExecutionException, RetryException {
+		List<Account> accounts = RETRYER.call(() -> gdaxTradingService.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){}));
+		if (CollectionUtils.isEmpty(accounts)) {
+			throw new IllegalArgumentException("currencyToAccount is null");
+		}
+		return accounts.stream().collect(Collectors.toMap(Account::getCurrency, a -> a));
 	}
 }

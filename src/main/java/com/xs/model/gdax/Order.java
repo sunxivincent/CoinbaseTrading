@@ -1,137 +1,104 @@
 package com.xs.model.gdax;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class Order {
 	String id;
 
-	@JsonProperty("size")
 	double size;
 
-	@JsonProperty("price")
 	double price;
 
-	@JsonProperty("product_id")
 	String product_id;
 
-	@JsonProperty("side")
 	String side;
 
-	@JsonProperty("stp")
 	String stp;
 
-	@JsonProperty("type")
 	String type;
 
-	@JsonProperty("time_in_force")
 	String time_in_force;
 
-	@JsonProperty("post_only")
 	boolean post_only;
 
-	@JsonProperty("created_at")
 	String created_at;
 
-	@JsonProperty("fill_fees")
 	String fill_fees;
 
-	@JsonProperty("filled_size")
 	String filled_size;
 
-	@JsonProperty("executed_value")
 	String executed_value;
 
-	@JsonProperty("status")
 	String status;
 
-	@JsonProperty("settled")
 	boolean settled;
 
-	@java.beans.ConstructorProperties({"id", "size", "price", "product_id", "side", "stp", "type", "time_in_force", "post_only", "created_at", "fill_fees", "filled_size", "executed_value", "status", "settled"})
-	public Order(String id, double size, double price, String product_id, String side, String stp, String type, String time_in_force, boolean post_only, String created_at, String fill_fees, String filled_size, String executed_value, String status, boolean settled) {
+	public Order() {
+	}
+
+	public void setId(String id) {
 		this.id = id;
+	}
+
+	public void setSize(double size) {
 		this.size = size;
+	}
+
+	public void setPrice(double price) {
 		this.price = price;
+	}
+
+	public void setProduct_id(String product_id) {
 		this.product_id = product_id;
+	}
+
+	public void setSide(String side) {
 		this.side = side;
+	}
+
+	public void setStp(String stp) {
 		this.stp = stp;
+	}
+
+	public void setType(String type) {
 		this.type = type;
+	}
+
+	public void setTime_in_force(String time_in_force) {
 		this.time_in_force = time_in_force;
+	}
+
+	public void setPost_only(boolean post_only) {
 		this.post_only = post_only;
+	}
+
+	public void setCreated_at(String created_at) {
 		this.created_at = created_at;
+	}
+
+	public void setFill_fees(String fill_fees) {
 		this.fill_fees = fill_fees;
+	}
+
+	public void setFilled_size(String filled_size) {
 		this.filled_size = filled_size;
+	}
+
+	public void setExecuted_value(String executed_value) {
 		this.executed_value = executed_value;
+	}
+
+	public void setStatus(String status) {
 		this.status = status;
+	}
+
+	public void setSettled(boolean settled) {
 		this.settled = settled;
-	}
-
-	public String getId() {
-		return this.id;
-	}
-
-	public double getSize() {
-		return this.size;
-	}
-
-	public double getPrice() {
-		return this.price;
-	}
-
-	public String getProduct_id() {
-		return this.product_id;
-	}
-
-	public String getSide() {
-		return this.side;
-	}
-
-	public String getStp() {
-		return this.stp;
-	}
-
-	public String getType() {
-		return this.type;
-	}
-
-	public String getTime_in_force() {
-		return this.time_in_force;
-	}
-
-	public boolean isPost_only() {
-		return this.post_only;
-	}
-
-	public String getCreated_at() {
-		return this.created_at;
-	}
-
-	public String getFill_fees() {
-		return this.fill_fees;
-	}
-
-	public String getFilled_size() {
-		return this.filled_size;
-	}
-
-	public String getExecuted_value() {
-		return this.executed_value;
-	}
-
-	public String getStatus() {
-		return this.status;
-	}
-
-	public boolean isSettled() {
-		return this.settled;
 	}
 
 	public boolean equals(Object o) {
 		if (o == this) return true;
 		if (!(o instanceof Order)) return false;
 		final Order other = (Order) o;
+		if (!other.canEqual((Object) this)) return false;
 		final Object this$id = this.getId();
 		final Object other$id = other.getId();
 		if (this$id == null ? other$id != null : !this$id.equals(other$id)) return false;
@@ -209,7 +176,71 @@ public class Order {
 		return result;
 	}
 
+	protected boolean canEqual(Object other) {
+		return other instanceof Order;
+	}
+
 	public String toString() {
 		return "Order(id=" + this.getId() + ", size=" + this.getSize() + ", price=" + this.getPrice() + ", product_id=" + this.getProduct_id() + ", side=" + this.getSide() + ", stp=" + this.getStp() + ", type=" + this.getType() + ", time_in_force=" + this.getTime_in_force() + ", post_only=" + this.isPost_only() + ", created_at=" + this.getCreated_at() + ", fill_fees=" + this.getFill_fees() + ", filled_size=" + this.getFilled_size() + ", executed_value=" + this.getExecuted_value() + ", status=" + this.getStatus() + ", settled=" + this.isSettled() + ")";
+	}
+
+	public String getId() {
+		return this.id;
+	}
+
+	public double getSize() {
+		return this.size;
+	}
+
+	public double getPrice() {
+		return this.price;
+	}
+
+	public String getProduct_id() {
+		return this.product_id;
+	}
+
+	public String getSide() {
+		return this.side;
+	}
+
+	public String getStp() {
+		return this.stp;
+	}
+
+	public String getType() {
+		return this.type;
+	}
+
+	public String getTime_in_force() {
+		return this.time_in_force;
+	}
+
+	public boolean isPost_only() {
+		return this.post_only;
+	}
+
+	public String getCreated_at() {
+		return this.created_at;
+	}
+
+	public String getFill_fees() {
+		return this.fill_fees;
+	}
+
+	public String getFilled_size() {
+		return this.filled_size;
+	}
+
+	public String getExecuted_value() {
+		return this.executed_value;
+	}
+
+	public String getStatus() {
+		return this.status;
+	}
+
+	public boolean isSettled() {
+		return this.settled;
 	}
 }

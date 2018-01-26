@@ -6,3 +6,8 @@ gdax:
   key: ""
   secret: ""
   enable: "true"
+
+logging:
+  file: logs/dev_app.log
+  level:
+    org.springframework.web: ERROR

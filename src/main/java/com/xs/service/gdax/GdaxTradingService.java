@@ -15,14 +15,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.File;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -36,9 +34,8 @@ public class GdaxTradingService implements TradingService {
 	private final RestTemplate restTemplate;
 	private final Gson gson;
 	private final boolean enable;
-
+	private final TransactionLogger transactionLogger;
 	private final String CANCEL_ALL_ORDERS_PATH = "/orders";
-	private File logFile;
 
 	private final static ScheduledExecutorService FILE_THREAD_POOL = Executors.newSingleThreadScheduledExecutor();
 	private final static ScheduledExecutorService MM_POOL = Executors.newSingleThreadScheduledExecutor();
@@ -52,6 +49,7 @@ public class GdaxTradingService implements TradingService {
 														SignatureFactory signatureFactory,
 														RestTemplate restTemplate,
 														Gson gson,
+														TransactionLogger transactionLogger,
 														@Value("${gdax.enable}") String enable) {
 		this.apikey = apikey;
 		this.passphrase = passphrase;
@@ -61,6 +59,7 @@ public class GdaxTradingService implements TradingService {
 		this.signatureFactory = signatureFactory;
 		this.restTemplate = restTemplate;
 		this.gson = gson;
+		this.transactionLogger = transactionLogger;
 		this.enable = "true".equals(enable);
 	}
 
@@ -81,12 +80,7 @@ public class GdaxTradingService implements TradingService {
 
 	@Override
 	public void start() {
-		FILE_THREAD_POOL.scheduleAtFixedRate(() ->
-			logFile = new File("src/main/resources/"
-				+ LocalDate.now().getMonth().name()
-				+"_"
-				+ LocalDate.now().getDayOfMonth()), 0, 1, TimeUnit.HOURS);
-		if (!enable) throw new IllegalStateException("not started");
+
 	}
 
 	@Override
@@ -101,7 +95,7 @@ public class GdaxTradingService implements TradingService {
 				HttpMethod.DELETE,
 				createHttpEntity(CANCEL_ALL_ORDERS_PATH, HttpMethod.DELETE.toString(), ""),
 				new ParameterizedTypeReference<String>(){});
-			TransactionLogger.writeLog(logFile, "cancel all orders stopping service");
+			transactionLogger.writeLog("cancel all orders stopping service");
 			if (!response.getStatusCode().is2xxSuccessful()) {
 				throw new IllegalArgumentException("response is not 2xx" + " response code: " + response.getStatusCode());
 			}
@@ -136,12 +130,30 @@ public class GdaxTradingService implements TradingService {
 				HttpMethod.GET,
 				createHttpEntity(requestPath, HttpMethod.GET.toString(), ""),
 				responseType);
+
 			return responseEntity.getBody();
 		} catch (Exception ex) {
 			log.error("GET request Failed for " + requestPath, ex);
 		}
 		return null;
 	}
+
+	// example "http://my-rest-url.org/rest/account/{account}?name={name}"
+	public <T, R> T getWithParams(String requestPathPattern, ParameterizedTypeReference<T> responseType, Map<String, R> params) {
+		try {
+				ResponseEntity<T> responseEntity = restTemplate.exchange(
+				baseUrl + requestPathPattern,
+				HttpMethod.GET,
+				createHttpEntity(requestPathPattern, HttpMethod.GET.toString(), ""),
+				responseType,
+				params);
+			return responseEntity.getBody();
+		} catch (Exception ex) {
+			log.error("GET request Failed for " + requestPathPattern, ex);
+		}
+		return null;
+	}
+
 
 	public <T> List<T> getAsList(String requestPath, ParameterizedTypeReference<T[]> responseType) {
 		T[] result = get(requestPath, responseType);

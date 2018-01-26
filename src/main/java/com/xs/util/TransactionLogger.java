@@ -1,6 +1,8 @@
 package com.xs.util;
 
 import com.google.common.io.Files;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,8 +13,12 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.Locale;
 
+@Component
 public class TransactionLogger {
-	public static void writeLog(File file, String str) throws IOException {
+
+	@Autowired File file;
+
+	public void writeLog(String str) throws IOException {
 		if (!file.exists()) {
 			file.createNewFile();
 		}

@@ -1,8 +1,10 @@
 package com.xs.controller;
 
+import com.sun.tools.javac.util.Pair;
 import com.xs.model.gdax.Order;
 import com.xs.service.gdax.AccountService;
 import com.xs.service.gdax.OrderService;
+import com.xs.service.gdax.ProductService;
 import com.xs.service.gdax.TradingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,9 @@ public class TradingController {
 	@Autowired
 	OrderService orderService;
 
+	@Autowired
+	ProductService productService;
+
 	@RequestMapping(value = "/test")
 	public String sanityTest() {
 		StringBuilder sb = new StringBuilder();
@@ -40,7 +45,7 @@ public class TradingController {
 	public String account() {
 		StringBuilder sb = new StringBuilder();
 		try {
-			accountService.getCurrencyToAccount().entrySet().forEach(i -> sb.append(i.getKey()).append(i.getValue()).append("\n"));
+			accountService.getAccounts().forEach((key, value) -> sb.append(key).append(value).append("\n"));
 		} catch (Exception e) {
 			return "failed";
 		}
@@ -65,6 +70,18 @@ public class TradingController {
 		try {
 			Order order = orderService.placeBuyWithTotalCash("BTC-USD", 8000, 100);
 			sb.append(order).append("\n").append("order placed").append("\n");
+		} catch (Exception e) {
+			return "failed";
+		}
+		return sb.toString();
+	}
+
+	@RequestMapping(value = "/best")
+	public String best() {
+		StringBuilder sb = new StringBuilder();
+		try {
+			Pair<Double, Double> pair = productService.getBestLimitBuySellPricePair("BTC-USD");
+			sb.append(pair.fst).append(" ").append(pair.snd);
 		} catch (Exception e) {
 			return "failed";
 		}

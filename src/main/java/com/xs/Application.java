@@ -10,7 +10,10 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @SpringBootApplication
 public class Application {
@@ -32,4 +35,15 @@ public class Application {
 		}).create();
 	}
 
+	@Bean
+	public File file() throws IOException {
+		File file = new File("src/main/resources/"
+			+ LocalDate.now().getMonth().name()
+			+"_"
+			+ LocalDate.now().getDayOfMonth());
+		if (!file.exists()) {
+			file.createNewFile();
+		}
+		return file;
+	}
 }

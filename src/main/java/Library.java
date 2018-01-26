@@ -1,6 +1,8 @@
-import com.google.gson.Gson;
+import com.xs.util.TransactionLogger;
 
+import java.io.File;
 import java.io.IOException;
+import java.time.LocalDate;
 
 /*
  * @author sunxi, @date 1/22/18 8:26 PM
@@ -10,10 +12,11 @@ public class Library {
 //		List<String> resr = Files.readLines(new File(Resources.getResource("test").getPath()),
 //			Charset.defaultCharset());
 //		System.out.println(resr);
-		NewLimitOrder a = new NewLimitOrder("af", "afd", 1.1d, 2.2d);
-		Gson gson = new Gson();
-		String jsonBody = gson.toJson(a);
-		System.out.println(jsonBody);
+		File file = new File("src/main/resources/"
+			+ LocalDate.now().getMonth().name()
+			+"_"
+			+ LocalDate.now().getDayOfMonth());
+		TransactionLogger.writeLog(file, "asfd");
 
 	}
 
