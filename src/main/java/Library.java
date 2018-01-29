@@ -1,5 +1,3 @@
-import com.xs.util.TransactionLogger;
-
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -16,7 +14,6 @@ public class Library {
 			+ LocalDate.now().getMonth().name()
 			+"_"
 			+ LocalDate.now().getDayOfMonth());
-		TransactionLogger.writeLog(file, "asfd");
 
 	}
 

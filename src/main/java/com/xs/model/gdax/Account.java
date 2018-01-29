@@ -1,6 +1,8 @@
 package com.xs.model.gdax;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
+import lombok.Getter;
 
 /**
  *     {
@@ -14,6 +16,8 @@ import lombok.Data;
  */
 
 @Data
+@Getter
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Account {
 	String id;
 

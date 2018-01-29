@@ -5,9 +5,9 @@ import com.github.rholder.retry.Retryer;
 import com.github.rholder.retry.RetryerBuilder;
 import com.github.rholder.retry.StopStrategies;
 import com.github.rholder.retry.WaitStrategies;
-import com.google.common.collect.ImmutableMap;
 import com.xs.model.gdax.Fill;
 import com.xs.model.gdax.Order;
+import com.xs.util.MathUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +25,8 @@ public class OrderService {
 	private static final double MIN_BUY_UNIT = 0.001;
 	private static final String ORDERS_ENDPOINT = "/orders";
 	private static final String FILLS_ENDPOINT = "/fills";
+	private static final String BUY = "buy";
+	private static final String SELL = "sell";
 
 	private static final Retryer<Order> GENERAL_RETRYER = RetryerBuilder.<Order>newBuilder()
 		.retryIfRuntimeException()
@@ -41,40 +44,86 @@ public class OrderService {
 		.withStopStrategy(StopStrategies.stopAfterAttempt(5))
 		.build();
 
-	@Autowired
-	private final GdaxTradingService gdaxTradingService;
+	private final GdaxTradingServiceTemplate gdaxTradingServiceTemplate;
 
-	public OrderService(GdaxTradingService gdaxTradingService) {
-		this.gdaxTradingService = gdaxTradingService;
+	@Autowired
+	public OrderService(GdaxTradingServiceTemplate gdaxTradingServiceTemplate) {
+		this.gdaxTradingServiceTemplate = gdaxTradingServiceTemplate;
 	}
 
 	public Order getOrder(String orderId) throws ExecutionException, RetryException {
-		return GENERAL_RETRYER.call(() -> gdaxTradingService.get(ORDERS_ENDPOINT + "/" + orderId,new ParameterizedTypeReference<Order>(){}));
+		return GENERAL_RETRYER.call(() -> gdaxTradingServiceTemplate.get(ORDERS_ENDPOINT + "/" + orderId,new ParameterizedTypeReference<Order>(){}));
 	}
 
-	public List<Fill> getFill(String orderId) throws ExecutionException, RetryException {
-		return FILL_RETRYER.call(() -> gdaxTradingService.getWithParams(
-			FILLS_ENDPOINT + "/" + orderId + "?order_id={order_id}", new ParameterizedTypeReference<List<Fill>>(){}, ImmutableMap.of("order_id", orderId)));
+	// TODO: revisit using getWithParams
+//	public Fill getFill(String orderId) throws ExecutionException, RetryException {
+//		List<Fill> fillList = FILL_RETRYER.call(() -> gdaxTradingServiceTemplate.getWithParams(
+//			FILLS_ENDPOINT + "?order_id={order_id}",
+//			new ParameterizedTypeReference<List<Fill>>(){},
+//			ImmutableMap.of("order_id", orderId)));
+//		return CollectionUtils.isEmpty(fillList) ? null : fillList.get(0);
+//	}
+
+	// return null if order is not existed (i.e., cancelled)
+	// one order id can corresponding to multiple settled fills
+	public List<Fill> getFillsByOrderId(String orderId) throws ExecutionException, RetryException {
+		return FILL_RETRYER.call(() -> gdaxTradingServiceTemplate.get(
+			FILLS_ENDPOINT + "?order_id=" + orderId,
+			new ParameterizedTypeReference<List<Fill>>(){}));
 	}
 
+	public List<Fill> getFills() throws ExecutionException, RetryException {
+		return FILL_RETRYER.call(() -> gdaxTradingServiceTemplate.get(
+			FILLS_ENDPOINT, new ParameterizedTypeReference<List<Fill>>(){}));
+	}
+
+	// this would be best effort, if the order is partially fulfilled, we will cancel orders after max retries
+	// also note there is precision requirement. So only get 5 decimal maximum
 	public Order placeLimitOrder(String productId, String side, double size, double price) throws ExecutionException, RetryException {
 		double limitSize = Math.max(MIN_BUY_UNIT, size);
-		return GENERAL_RETRYER.call(() -> gdaxTradingService.post(ORDERS_ENDPOINT, new ParameterizedTypeReference<Order>(){},
-			new NewLimitOrder(productId, side, price, limitSize)
+		return GENERAL_RETRYER.call(() -> gdaxTradingServiceTemplate.post(ORDERS_ENDPOINT, new ParameterizedTypeReference<Order>(){},
+			new NewLimitOrder(productId, side, MathUtil.roundDoubleTo5Decimal(price), MathUtil.roundDoubleTo5Decimal(limitSize))
 		));
 	}
 
 	public List<String> cancelAllOrders() throws ExecutionException, RetryException {
-		return CANCEL_RETRYER.call(() -> Arrays.asList(gdaxTradingService.delete(ORDERS_ENDPOINT, new ParameterizedTypeReference<String[]>(){})));
+		return CANCEL_RETRYER.call(() -> Arrays.asList(gdaxTradingServiceTemplate.delete(ORDERS_ENDPOINT, new ParameterizedTypeReference<String[]>(){})));
 	}
 
-	// productId example: BTC-USD
-	public Order placeBuyWithTotalCash(String productId, double unitPrice, double targetCash) throws ExecutionException, RetryException {
+	/**
+	 *
+	 * @param productId example: BTC-USD
+	 * @param unitPrice the placed unit price in the order
+	 * @param targetCash the total cash you want to place for buying given product
+	 * @return
+	 * @throws ExecutionException
+	 * @throws RetryException
+	 */
+	public Order bestEffortBuyWithTotalCash(String productId, double unitPrice, double targetCash, Optional<Integer> maxtry) {
 		if (unitPrice == 0) throw new IllegalStateException(productId + " unitPrice is 0");
-		Order placedOrder = placeLimitOrder(productId, "buy", targetCash / unitPrice, unitPrice);
-		int max = 60;
-		int hasTried = 0;
+		try {
+			return placeOrderUntilSettled(productId, BUY, targetCash / unitPrice, unitPrice, maxtry);
+		} catch (ExecutionException | RetryException ex) {
+			log.error("error occurred during bestEffortBuyWithTotalCash", ex);
+			return null;
+		}
+	}
 
+	public Order bestEffortSellWithSize(String productId, double unitPrice, double size, Optional<Integer> maxtry) {
+		if (unitPrice == 0) throw new IllegalStateException(productId + " unitPrice is 0");
+		try {
+			return placeOrderUntilSettled(productId, SELL, size, unitPrice, maxtry);
+		} catch (ExecutionException | RetryException ex) {
+			log.error("error occurred during bestEffortSellWithSize", ex);
+			return null;
+		}
+	}
+
+	private Order placeOrderUntilSettled(String productId, String side, double size, double unitPrice, Optional<Integer> maxtry)
+		throws ExecutionException, RetryException {
+		Order placedOrder = placeLimitOrder(productId, side, size, unitPrice);
+		int max = maxtry.orElse(15);
+		int hasTried = 0;
 		while (hasTried < max) {
 			try {
 				Thread.sleep(1000);
@@ -82,13 +131,19 @@ public class OrderService {
 				log.error("sleep error");
 			}
 			placedOrder = getOrder(placedOrder.getId());
-			if (placedOrder.isSettled() && "done".equals(placedOrder.getStatus())) break;
+			if (placedOrder.isSettled() && "done".equals(placedOrder.getStatus())) {
+				break;
+			}
 			hasTried ++;
 		}
 		if (hasTried == max) {
-			log.error("has tried: " + max + " but order: " + placedOrder.getId() + " not fulfilled");
-			cancelAllOrders();
+			log.info("has tried: " + max + " but " + placedOrder + " not settled");
+			log.info("started cancel all the orders due to max try");
+			List<String> canceledOrders = cancelAllOrders();
+			log.info("finished cancel all the orders due to max try, cancelled orders: " + canceledOrders);
 		}
+		// TODO: there would be some rare race condition that when cancelling placed the order it has been settled.
+		// Also the order would not be able to queried again
 		return placedOrder;
 	}
 

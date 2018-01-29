@@ -5,7 +5,6 @@ import com.github.rholder.retry.Retryer;
 import com.github.rholder.retry.RetryerBuilder;
 import com.github.rholder.retry.StopStrategies;
 import com.github.rholder.retry.WaitStrategies;
-import com.google.common.collect.ImmutableMap;
 import com.sun.tools.javac.util.Pair;
 import com.xs.model.gdax.Product;
 import lombok.extern.slf4j.Slf4j;
@@ -27,19 +26,17 @@ public class ProductService {
 		.withStopStrategy(StopStrategies.stopAfterAttempt(3))
 		.build();
 
-	private final GdaxTradingService gdaxTradingService;
+	private final GdaxTradingServiceTemplate gdaxTradingServiceTemplate;
 
 	@Autowired
-	public ProductService(GdaxTradingService gdaxTradingService) {
-		this.gdaxTradingService = gdaxTradingService;
+	public ProductService(GdaxTradingServiceTemplate gdaxTradingServiceTemplate) {
+		this.gdaxTradingServiceTemplate = gdaxTradingServiceTemplate;
 	}
 
 	public Product getBestBidAsk(String productId) throws ExecutionException, RetryException {
-		return GENERAL_RETRYER.call(() -> gdaxTradingService.getWithParams(
-			PRODUCT_ENDPOINT + "/" + productId + "/book?level={level}",
-			new ParameterizedTypeReference<Product>(){},
-			ImmutableMap.of("level", 1)
-			));
+		return GENERAL_RETRYER.call(() -> gdaxTradingServiceTemplate.get(
+			PRODUCT_ENDPOINT + "/" + productId + "/book?level=1",
+			new ParameterizedTypeReference<Product>(){}));
 	}
 
 	public Pair<Double, Double> getBestLimitBuySellPricePair(String productId) throws ExecutionException, RetryException {

@@ -35,6 +35,9 @@ gen### Gradle template
 .gradle
 /build/
 
+/logs/dev_app.log
+
+
 # Ignore Gradle GUI config
 gradle-app.setting
 

@@ -6,6 +6,9 @@ gdax:
   key: ""
   secret: ""
   enable: "true"
+  strategy:
+    movingAverage:
+      priceDelta: "5"
 
 logging:
   file: logs/dev_app.log

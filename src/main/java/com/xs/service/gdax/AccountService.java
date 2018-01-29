@@ -27,20 +27,24 @@ public class AccountService {
 		.withStopStrategy(StopStrategies.stopAfterAttempt(5))
 		.build();
 
-	private final GdaxTradingService gdaxTradingService;
+	private final GdaxTradingServiceTemplate gdaxTradingServiceTemplate;
 
 	public static final String ACCOUNTS_ENDPOINT = "/accounts";
 
 	@Autowired
-	public AccountService(GdaxTradingService gdaxTradingService) throws ExecutionException, RetryException {
-		this.gdaxTradingService = gdaxTradingService;
+	public AccountService(GdaxTradingServiceTemplate gdaxTradingServiceTemplate) throws ExecutionException, RetryException {
+		this.gdaxTradingServiceTemplate = gdaxTradingServiceTemplate;
 	}
 
 	public Map<String, Account> getAccounts() throws ExecutionException, RetryException {
-		List<Account> accounts = RETRYER.call(() -> gdaxTradingService.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){}));
+		List<Account> accounts = RETRYER.call(() -> gdaxTradingServiceTemplate.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){}));
 		if (CollectionUtils.isEmpty(accounts)) {
 			throw new IllegalArgumentException("currencyToAccount is null");
 		}
 		return accounts.stream().collect(Collectors.toMap(Account::getCurrency, a -> a));
+	}
+
+	public Account getAccount(String currency) throws ExecutionException, RetryException {
+		return getAccounts().get(currency);
 	}
 }

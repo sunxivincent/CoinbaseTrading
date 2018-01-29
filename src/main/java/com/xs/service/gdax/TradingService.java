@@ -1,12 +1,13 @@
 package com.xs.service.gdax;
 
 import com.xs.service.strategy.MMStrategy;
-import org.springframework.context.Lifecycle;
 import org.springframework.stereotype.Component;
 
 @Component
-public interface TradingService extends Lifecycle {
+public interface TradingService {
 	String sanityTest();
 
-	double makeMoney(MMStrategy strategy);
+	void makeMoney(MMStrategy strategy);
+
+	void stop();
 }
