@@ -2,26 +2,23 @@ package com.xs.model.gdax;
 
 import com.sun.tools.javac.util.Pair;
 import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
 import org.springframework.util.CollectionUtils;
 
 import java.util.Comparator;
 import java.util.TreeSet;
 
-@AllArgsConstructor
+@Data
 @Getter
-@Setter
+@AllArgsConstructor
 public class PriceElement {
 	@NonNull String id;
 	double unit;
 	double unitCostBasis;
 	long timestamp;
 
-	// find the element with strictly lower and higher price in the set. Also note after scanning the price for
-	// all elements, if not finding significant change (this is to avoid adding excessive same price element) we treate
-	// it as a negligible case
 	public static Pair<PriceElement, PriceElement> getLowerAndHigher(double targetPrice,
 																																	 TreeSet<PriceElement> priceElements, double delta) {
 		if (CollectionUtils.isEmpty(priceElements)) return null;

@@ -36,7 +36,7 @@ gen### Gradle template
 /build/
 
 /logs/dev_app.log
-
+src/main/resources/.DS_Store
 
 # Ignore Gradle GUI config
 gradle-app.setting

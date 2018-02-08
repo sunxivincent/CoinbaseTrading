@@ -60,8 +60,8 @@ public class GdaxTradingServiceTemplate {
 			return responseEntity.getBody();
 		} catch (Exception ex) {
 			log.error("GET request Failed for " + requestPath, ex);
+			throw ex;
 		}
-		return null;
 	}
 
 	// example "http://my-rest-url.org/rest/account/{account}?name={name}"
@@ -78,8 +78,8 @@ public class GdaxTradingServiceTemplate {
 			return responseEntity.getBody();
 		} catch (Exception ex) {
 			log.error("GET request Failed for " + requestPathPattern, ex);
+			throw ex;
 		}
-		return null;
 	}
 
 
@@ -98,8 +98,8 @@ public class GdaxTradingServiceTemplate {
 			return response.getBody();
 		} catch (Exception ex) {
 			log.error("POST request Failed for " + requestPath, ex);
+			throw ex;
 		}
-		return null;
 	}
 
 	public <T> T delete(String requestPath, ParameterizedTypeReference<T> responseType) {
@@ -111,8 +111,8 @@ public class GdaxTradingServiceTemplate {
 			return response.getBody();
 		} catch (Exception ex) {
 			log.error("DELETE request Failed for " + requestPath, ex);
+			throw ex;
 		}
-		return null;
 	}
 
 	private HttpEntity createHttpEntity(String requestPath, String method, String jsonBody) {

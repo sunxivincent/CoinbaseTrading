@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -36,15 +35,18 @@ public class AccountService {
 		this.gdaxTradingServiceTemplate = gdaxTradingServiceTemplate;
 	}
 
-	public Map<String, Account> getAccounts() throws ExecutionException, RetryException {
-		List<Account> accounts = RETRYER.call(() -> gdaxTradingServiceTemplate.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){}));
-		if (CollectionUtils.isEmpty(accounts)) {
-			throw new IllegalArgumentException("currencyToAccount is null");
+	public Map<String, Account> getAccounts() {
+		try {
+			List<Account> accounts = RETRYER.call(() -> gdaxTradingServiceTemplate.getAsList(ACCOUNTS_ENDPOINT, new ParameterizedTypeReference<Account[]>(){}));
+			return accounts.stream().collect(Collectors.toMap(Account::getCurrency, a -> a));
+		} catch (ExecutionException | RetryException ex) {
+			log.error("failed to get accounts", ex);
+			return null;
 		}
-		return accounts.stream().collect(Collectors.toMap(Account::getCurrency, a -> a));
 	}
 
-	public Account getAccount(String currency) throws ExecutionException, RetryException {
-		return getAccounts().get(currency);
+	public Account getAccount(String currency) {
+		Map<String, Account> accounts = getAccounts();
+		return accounts == null ? null : accounts.get(currency);
 	}
 }

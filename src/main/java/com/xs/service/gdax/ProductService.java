@@ -39,11 +39,17 @@ public class ProductService {
 			new ParameterizedTypeReference<Product>(){}));
 	}
 
-	public Pair<Double, Double> getBestLimitBuySellPricePair(String productId) throws ExecutionException, RetryException {
-		Product product = getBestBidAsk(productId);
-		if (product == null || CollectionUtils.isEmpty(product.getAsks()) || CollectionUtils.isEmpty(product.getBids())) {
-			log.error("failed to fetch product " + productId + " best bid and ask");
+	public Pair<Double, Double> getBestLimitBuySellPricePair(String productId) {
+		try {
+			Product product = getBestBidAsk(productId);
+			if (product == null || CollectionUtils.isEmpty(product.getAsks()) || CollectionUtils.isEmpty(product.getBids())) {
+				log.error("failed to fetch product " + productId + " best bid and ask");
+				return null;
+			}
+			return Pair.of(product.getBids().get(0).get(0), product.getAsks().get(0).get(0));
+		} catch (ExecutionException | RetryException ex) {
+			log.error("failed to getBestLimitBuySellPricePair", ex);
+			return null;
 		}
-		return Pair.of(product.getBids().get(0).get(0), product.getAsks().get(0).get(0));
 	}
 }

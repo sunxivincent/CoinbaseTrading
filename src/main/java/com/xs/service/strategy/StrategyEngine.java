@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @Component
 public class StrategyEngine {
-	private final static ScheduledExecutorService MM_POOL = Executors.newSingleThreadScheduledExecutor();
+	private final static ScheduledExecutorService MM_POOL = Executors.newScheduledThreadPool(1);
 	private final AtomicBoolean running = new AtomicBoolean(false);
 
 	@Autowired
@@ -22,7 +22,8 @@ public class StrategyEngine {
 		if (running.compareAndSet(false, true)) {
 			if (strategy == MMStrategy.AVERAGE_MOVER) {
 				log.info("starting AVERAGE_MOVER strategy");
-				MM_POOL.scheduleWithFixedDelay(averageMoverTask, 0, 1, TimeUnit.SECONDS);
+				MM_POOL.scheduleWithFixedDelay(
+					averageMoverTask, 0, 300, TimeUnit.MILLISECONDS);
 			}
 		}
 	}

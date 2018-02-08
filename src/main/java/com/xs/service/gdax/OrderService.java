@@ -5,8 +5,10 @@ import com.github.rholder.retry.Retryer;
 import com.github.rholder.retry.RetryerBuilder;
 import com.github.rholder.retry.StopStrategies;
 import com.github.rholder.retry.WaitStrategies;
+import com.sun.tools.javac.util.Pair;
 import com.xs.model.gdax.Fill;
 import com.xs.model.gdax.Order;
+import com.xs.model.gdax.ProductId;
 import com.xs.util.MathUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,10 +47,12 @@ public class OrderService {
 		.build();
 
 	private final GdaxTradingServiceTemplate gdaxTradingServiceTemplate;
+	private final ProductService productService;
 
 	@Autowired
-	public OrderService(GdaxTradingServiceTemplate gdaxTradingServiceTemplate) {
+	public OrderService(GdaxTradingServiceTemplate gdaxTradingServiceTemplate, ProductService productService) {
 		this.gdaxTradingServiceTemplate = gdaxTradingServiceTemplate;
+		this.productService = productService;
 	}
 
 	public Order getOrder(String orderId) throws ExecutionException, RetryException {
@@ -95,34 +99,35 @@ public class OrderService {
 	 * @param productId example: BTC-USD
 	 * @param unitPrice the placed unit price in the order
 	 * @param targetCash the total cash you want to place for buying given product
+	 * @param init
 	 * @return
 	 * @throws ExecutionException
 	 * @throws RetryException
 	 */
-	public Order bestEffortBuyWithTotalCash(String productId, double unitPrice, double targetCash, Optional<Integer> maxtry) {
+	public Order bestEffortBuyWithTotalCash(String productId, double unitPrice, double targetCash, Optional<Integer> maxtry, boolean init) {
 		if (unitPrice == 0) throw new IllegalStateException(productId + " unitPrice is 0");
 		try {
-			return placeOrderUntilSettled(productId, BUY, targetCash / unitPrice, unitPrice, maxtry);
+			return placeOrderUntilSettled(productId, BUY, targetCash / unitPrice, unitPrice, maxtry, init);
 		} catch (ExecutionException | RetryException ex) {
-			log.error("error occurred during bestEffortBuyWithTotalCash", ex);
+			log.error("error occurred during bestEffortBuyWithTotalCash unit price: " + unitPrice + " target cash: " + targetCash, ex);
 			return null;
 		}
 	}
 
-	public Order bestEffortSellWithSize(String productId, double unitPrice, double size, Optional<Integer> maxtry) {
+	public Order bestEffortSellWithSize(String productId, double unitPrice, double size, Optional<Integer> maxtry, boolean init) {
 		if (unitPrice == 0) throw new IllegalStateException(productId + " unitPrice is 0");
 		try {
-			return placeOrderUntilSettled(productId, SELL, size, unitPrice, maxtry);
+			return placeOrderUntilSettled(productId, SELL, size, unitPrice, maxtry, init);
 		} catch (ExecutionException | RetryException ex) {
-			log.error("error occurred during bestEffortSellWithSize", ex);
+			log.error("error occurred during bestEffortSellWithSize unit price: " + unitPrice + " size: " + size, ex);
 			return null;
 		}
 	}
 
-	private Order placeOrderUntilSettled(String productId, String side, double size, double unitPrice, Optional<Integer> maxtry)
+	private Order placeOrderUntilSettled(String productId, String side, double size, double unitPrice, Optional<Integer> maxtry, boolean init)
 		throws ExecutionException, RetryException {
 		Order placedOrder = placeLimitOrder(productId, side, size, unitPrice);
-		int max = maxtry.orElse(15);
+		int max = maxtry.orElse(10);
 		int hasTried = 0;
 		while (hasTried < max) {
 			try {
@@ -132,18 +137,33 @@ public class OrderService {
 			}
 			placedOrder = getOrder(placedOrder.getId());
 			if (placedOrder.isSettled() && "done".equals(placedOrder.getStatus())) {
-				break;
+				return placedOrder;
+			}
+			if (!init) {
+				Pair<Double, Double> buyAndSellPrice = productService.getBestLimitBuySellPricePair(ProductId.BTC_USD);
+				if (buyAndSellPrice != null) {
+					if (BUY.equals(side)) {
+						if (buyAndSellPrice.fst > unitPrice) {
+							log.info("buy price: " + unitPrice + " is not current optimal: " + buyAndSellPrice.fst);
+							hasTried = max;
+							break;
+						}
+					} else {
+						if (buyAndSellPrice.snd < unitPrice) {
+							log.info("sell price: " + unitPrice + " is not current optimal: " + buyAndSellPrice.snd);
+							hasTried = max;
+							break;
+						}
+					}
+				}
 			}
 			hasTried ++;
 		}
 		if (hasTried == max) {
-			log.info("has tried: " + max + " but " + placedOrder + " not settled");
-			log.info("started cancel all the orders due to max try");
+			log.info(placedOrder + " not settled, started cancel all the orders");
 			List<String> canceledOrders = cancelAllOrders();
 			log.info("finished cancel all the orders due to max try, cancelled orders: " + canceledOrders);
 		}
-		// TODO: there would be some rare race condition that when cancelling placed the order it has been settled.
-		// Also the order would not be able to queried again
 		return placedOrder;
 	}
 
@@ -161,7 +181,7 @@ public class OrderService {
 			this.type = "limit";
 			this.price = price;
 			this.size = size;
-			this.post_only = true;
+			this.post_only = true; // true means not executed as market order
 		}
 	}
 }

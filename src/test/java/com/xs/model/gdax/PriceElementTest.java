@@ -53,4 +53,20 @@ public class PriceElementTest {
 		AverageMoverTask.initEnqueue(priceElements, 6, 0.01, 10000);
 		assertEquals(6, priceElements.size());
 	}
+
+	@Test
+	public void testModify() {
+		TreeSet<PriceElement> priceElements = new TreeSet<>(new PriceElement.PriceElementComparator());
+		priceElements.add(new PriceElement("1", 1, 1000, 12345));
+		priceElements.add(new PriceElement("2", 2, 1001, 12346));
+		priceElements.add(new PriceElement("3", 3, 1002, 12347));
+		PriceElement ceiling = priceElements.ceiling(new PriceElement("", 1, 1000, 12345));
+		System.out.println(priceElements);
+		if (ceiling != null) {
+			ceiling.setUnitCostBasis(ceiling.getUnitCostBasis() - 100);
+		}
+		System.out.println(priceElements);
+		priceElements.remove(ceiling);
+		assertEquals(priceElements.size(), 2);
+	}
 }

@@ -1,5 +1,5 @@
 gdax:
-  api:
+  api
     baseUrl: "https://api.gdax.com"
     testUrl: "https://public.sandbox.gdax.com"
   passphrase: ""
@@ -8,7 +8,7 @@ gdax:
   enable: "true"
   strategy:
     movingAverage:
-      priceDelta: "5"
+      initDelta: "15"
 
 logging:
   file: logs/dev_app.log

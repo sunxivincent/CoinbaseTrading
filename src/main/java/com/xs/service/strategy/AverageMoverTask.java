@@ -1,7 +1,7 @@
 package com.xs.service.strategy;
 
-import com.github.rholder.retry.RetryException;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.util.concurrent.AtomicDouble;
 import com.sun.tools.javac.util.Pair;
 import com.xs.model.gdax.Account;
 import com.xs.model.gdax.Currency;
@@ -17,15 +17,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -33,11 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // current this only supports btc trading
 public class AverageMoverTask implements Runnable {
 	// in order to make placing limit order easier, widen the range a little bit
-	public static final double ADJUST_BID_ASK_RANGE = 0.02;
-	public static final double REMAINING_UNIT_IGNORED = 0.005;
-	public static final int TOTAL_BUCKET = 100;
-	public static final double BTC_INIT_PERCENT_UPPRER = 0.5;
-	public static final double BTC_INIT_PERCENT_LOWER = 0.2; // if below this threshold need to buy more
+	public static final double ADJUST_BID_ASK_RANGE = 0;
+	public static final double REMAINING_UNIT_IGNORED = 0.002;
+	public static final int TOTAL_BUCKET = 20;
+	public static final double BTC_INIT_PERCENT_LOWER = 0.1; // if below this threshold need to buy more
 	public static final double BUCKET_PERCENT = 1.0 / TOTAL_BUCKET;
 	public static final double MIN_CASH = 1;
 
@@ -46,19 +42,27 @@ public class AverageMoverTask implements Runnable {
 	@NonNull private final ProductService productService;
 	@NonNull private final TransactionLogger transactionLogger;
 	// only place buy or sell when adjacent element's price larger than delta
-	private final double priceDelta; // need to be larger than ADJUST_BID_ASK_RANGE
+	private final double initDelta; // need to be larger than ADJUST_BID_ASK_RANGE
 
 	private final TreeSet<PriceElement> priceElements;
 	private final AtomicBoolean hasInit = new AtomicBoolean(false);
+	private final AtomicDouble totalProfit = new AtomicDouble(0);
+	private boolean prevOp = false;  // buy
+	private double buyDelta;
+	private double sellDelta;
+	private int extraWaitSec = 5;
 
 	@Autowired
 	public AverageMoverTask(AccountService accountService, OrderService orderService,
 													ProductService productService, TransactionLogger transactionLogger,
-													@Value("${gdax.strategy.movingAverage.priceDelta}") double priceDelta) {
-		if (priceDelta < ADJUST_BID_ASK_RANGE) {
-			throw new IllegalArgumentException("priceDelta: " + priceDelta + " less than " + ADJUST_BID_ASK_RANGE);
+													@Value("${gdax.strategy.movingAverage.initDelta}") double initDelta) {
+		if (initDelta < ADJUST_BID_ASK_RANGE) {
+			throw new IllegalArgumentException("initDelta: " + initDelta + " less than " + ADJUST_BID_ASK_RANGE);
 		}
-		this.priceDelta = priceDelta;
+		this.initDelta = initDelta;
+		this.buyDelta = initDelta;
+		this.sellDelta = initDelta;
+
 		this.priceElements = new TreeSet<>(new PriceElement.PriceElementComparator());
 		this.accountService = accountService;
 		this.orderService = orderService;
@@ -71,22 +75,15 @@ public class AverageMoverTask implements Runnable {
 		try {
 			AccountBTCStat accountBTCStat = getAccountBTCStat();
 			transactionLogger.writeLog("[account start]: " + accountBTCStat);
-			if (accountBTCStat.btcPercent > BTC_INIT_PERCENT_UPPRER) {
-				List<String> orderList = orderService.cancelAllOrders();
-				log.error("failed to init priceElements, order cancelled due to too much btc allocated: " + orderList);
-				throw new IllegalStateException("availableBtc: " + accountBTCStat.availableBtc + " btcPrice: " + accountBTCStat.btcPrice
-					+ " availableUsd: " + accountBTCStat.availableUsd + " btcPercent: " + accountBTCStat.btcPercent + " >" + BTC_INIT_PERCENT_UPPRER);
-			} else if (accountBTCStat.btcPercent > BTC_INIT_PERCENT_LOWER) {
+			if (accountBTCStat.btcPercent > BTC_INIT_PERCENT_LOWER) {
 				int nbuckets = (int) ((float) accountBTCStat.btcPercent / (float) BUCKET_PERCENT);
 				initEnqueue(priceElements, nbuckets, accountBTCStat.availableBtc, accountBTCStat.btcPrice);
 			} else {
-				// TODO : solve the problem that price will drop since bestBidAskPair is computed, here just re-calculate to reflect latest price
-				accountBTCStat = getAccountBTCStat();
 				double targetCash = accountBTCStat.totalAccountAvailableBalance * (BTC_INIT_PERCENT_LOWER - accountBTCStat.btcPercent);
 				log.info("start init task best effort buy order with targetCash: " + targetCash + " current " + accountBTCStat);
 				if (targetCash > MIN_CASH) {
 					Order placedOrder = orderService.bestEffortBuyWithTotalCash(ProductId.BTC_USD, accountBTCStat.btcBuyPrice - ADJUST_BID_ASK_RANGE, targetCash,
-						Optional.of(600)); // wait at most 10 min until buy order finish
+						Optional.of(600), true); // wait at most 10 min until buy order finish
 					if (placedOrder == null) {
 						log.error("failed to init priceElements, too many time retried");
 						throw new IllegalStateException();
@@ -101,12 +98,11 @@ public class AverageMoverTask implements Runnable {
 					throw new IllegalStateException();
 				}
 			}
-			if (priceElements.size() > (int)(TOTAL_BUCKET * BTC_INIT_PERCENT_UPPRER) || priceElements.size() < (int)(TOTAL_BUCKET * BTC_INIT_PERCENT_LOWER)) {
+			if (priceElements.size() > TOTAL_BUCKET || priceElements.size() < (int)(TOTAL_BUCKET * BTC_INIT_PERCENT_LOWER)) {
 				throw new IllegalStateException("PriceElements size: " + priceElements.size() + " is not expected");
 			}
 		} catch (Exception e) {
-			log.error("error occurred during PriceElement", e);
-			throw new IllegalStateException(e);
+			throw new IllegalStateException("error occurred during PriceElement", e);
 		}
 	}
 
@@ -121,33 +117,61 @@ public class AverageMoverTask implements Runnable {
 	@Override
 	public void run() {
 		try {
-			log.info("starting running task");
 			if(hasInit.compareAndSet(false, true)) {
+				log.info("starting running task");
 				initializePriceElements();
 			}
-			if (CollectionUtils.isEmpty(priceElements)) {
-				log.error("failed to start task since price elements is empty");
-				throw new IllegalStateException();
-			}
+
 			AccountBTCStat accountBTCStat = getAccountBTCStat();
-			Pair<PriceElement, PriceElement> pair = PriceElement.getLowerAndHigher(accountBTCStat.btcPrice, priceElements, priceDelta);
-			Pair<PriceElement, PriceElement> currentPriceLocation = PriceElement.getLowerAndHigher(accountBTCStat.btcPrice, priceElements, 0);
-			if (pair.fst == null) {
-				// place order when current price is lowest and the adjacent order price difference less than threshold
-				// also make sure there is no two elements with same price were enqueued initially that are counted in the
-				// lower higher calculation
-				if (priceElements.size() < TOTAL_BUCKET
-					&& currentPriceLocation.snd != null
-					&& Math.abs(currentPriceLocation.snd.getUnitCostBasis() - accountBTCStat.btcPrice) > priceDelta) {
-					buyOneBucket(priceElements, accountBTCStat);
+			if (accountBTCStat == null) {
+				log.error("failed to get accountBTCStat, wait 30s for next run");
+				Thread.sleep(30*1000);
+				return;
+			}
+
+			Pair<PriceElement, PriceElement> zeroDeltaPair = PriceElement.getLowerAndHigher(accountBTCStat.btcPrice, priceElements, 0);
+			if (zeroDeltaPair != null &&
+				  zeroDeltaPair.fst != null && accountBTCStat.btcPrice - zeroDeltaPair.fst.getUnitCostBasis() > sellDelta) {
+				boolean success = sellOneBucket(priceElements, zeroDeltaPair.fst, accountBTCStat);
+				if (success) {
+					if (prevOp) {
+						extraWaitSec = Math.min(60, extraWaitSec+10);;
+						sellDelta += 20;
+					} else {
+						extraWaitSec = 10;
+					}
+					buyDelta = Math.max(initDelta, buyDelta - 20);
+					if (priceElements.size() < TOTAL_BUCKET * 0.5) {
+						buyDelta = initDelta;
+					}
+					prevOp = true;
+					log.info("sleep: " + extraWaitSec + " s, buy delta: " + buyDelta + " sell delta: " + sellDelta);
+					Thread.sleep(extraWaitSec * 1000);
 				}
-			} else if (priceElements.size() < (int)(TOTAL_BUCKET * BTC_INIT_PERCENT_LOWER)) { // keep some btc orders
-				buyOneBucket(priceElements, accountBTCStat);
-			} else { // time to make some profits
-				sellOneBucket(priceElements, pair.fst, accountBTCStat);
+			} else if (zeroDeltaPair == null ||
+					zeroDeltaPair.snd != null && zeroDeltaPair.snd.getUnitCostBasis() - accountBTCStat.btcPrice > buyDelta &&
+					(zeroDeltaPair.fst == null || accountBTCStat.btcPrice - zeroDeltaPair.fst.getUnitCostBasis() > buyDelta)) {
+				if (priceElements.size() < TOTAL_BUCKET) {
+					boolean success = buyOneBucket(priceElements, accountBTCStat);
+					if (success) {
+						if (!prevOp) {
+							extraWaitSec = Math.min(60, extraWaitSec+10);;
+							buyDelta += 20;
+						} else {
+							extraWaitSec = 10;
+						}
+						sellDelta = Math.max(initDelta, sellDelta - 20);
+						if (priceElements.size() >= TOTAL_BUCKET * 0.5) {
+							sellDelta = initDelta;
+						}
+						prevOp = false;
+						log.info("sleep: " + extraWaitSec + " s, buy delta: " + buyDelta + " sell delta: " + sellDelta);
+						Thread.sleep(extraWaitSec * 1000);
+					}
+				}
 			}
 		} catch (Exception e) {
-			throw new IllegalStateException(e);
+			throw new IllegalStateException("unexpected error occurred during task run", e);
 		}
 	}
 
@@ -161,55 +185,67 @@ public class AverageMoverTask implements Runnable {
 		}
 	}
 
-	private AccountBTCStat getAccountBTCStat() throws ExecutionException, RetryException {
+	private AccountBTCStat getAccountBTCStat() {
 		Map<String, Account> currencyToAccount = accountService.getAccounts();
 		Pair<Double, Double> bestBidAskPair = productService.getBestLimitBuySellPricePair(ProductId.BTC_USD);
+		if (bestBidAskPair == null) return null;
 		double availableBtc = currencyToAccount.get(Currency.BTC).getAvailable();
 		double btcPrice = bestBidAskPair.snd; // treat current best ask price is btc price
 		double availableUsd = currencyToAccount.get(Currency.USD).getAvailable();
 		double totalAccountAvailableBalance = availableBtc * btcPrice + availableUsd;
 		double btcPercent = 1 - availableUsd / totalAccountAvailableBalance;
-
 		return new AccountBTCStat(totalAccountAvailableBalance, availableUsd, availableBtc,
 			btcPrice, bestBidAskPair.fst, btcPercent);
 	}
 
-	private void buyOneBucket(TreeSet<PriceElement> priceElements, AccountBTCStat accountBTCStat) throws ExecutionException, RetryException, IOException {
-		log.info("starting buy one bucket" + accountBTCStat);
+	private boolean buyOneBucket(TreeSet<PriceElement> priceElements, AccountBTCStat accountBTCStat) {
+		log.info("starting buy one bucket, btc price: " + accountBTCStat.btcPrice);
 		double targetCash = Math.min(accountBTCStat.availableUsd, accountBTCStat.totalAccountAvailableBalance * BUCKET_PERCENT);
 		if (targetCash < MIN_CASH) {
 			log.info("targetCash: " + targetCash + " is not sufficient, wait for next sell opportunity " + accountBTCStat);
-			return;
+			return false;
 		}
-		Order placedOrder = orderService.bestEffortBuyWithTotalCash(ProductId.BTC_USD, accountBTCStat.btcBuyPrice - ADJUST_BID_ASK_RANGE,
-			targetCash, Optional.empty());
+		Order placedOrder = orderService.bestEffortBuyWithTotalCash(
+			ProductId.BTC_USD,
+			accountBTCStat.btcBuyPrice - ADJUST_BID_ASK_RANGE,
+			targetCash, Optional.empty(), false);
 		// make sure we have at least partial order settled
 		if (placedOrder == null || placedOrder.getFilled_size() == 0 || placedOrder.getExecuted_value() == 0) {
 			log.info("possible due to unexpected limit price or price is not good, look for next opportunities");
-			return;
+			return false;
 		}
 		transactionLogger.writeLog("Bought with targetCash: " + targetCash + " " + placedOrder + " " + accountBTCStat);
-		priceElements.add(new PriceElement(placedOrder.getId(),
-			placedOrder.getFilled_size(), placedOrder.getPrice(), System.currentTimeMillis()));
-
+		priceElements.add(
+			new PriceElement(
+				placedOrder.getId(),
+				placedOrder.getFilled_size(),
+				placedOrder.getPrice(),
+				System.currentTimeMillis()));
+		transactionLogger.writeLog(getQueueInfo());
+		return true;
 	}
 
-	private void sellOneBucket(TreeSet<PriceElement> priceElements, PriceElement priceElement, AccountBTCStat accountBTCStat) throws ExecutionException, RetryException, IOException {
-		log.info("starting sell one bucket " + priceElement + " " + accountBTCStat);
+	private boolean sellOneBucket(TreeSet<PriceElement> priceElements, PriceElement priceElement, AccountBTCStat accountBTCStat) {
+		log.info("starting sell one bucket, unit price: " + priceElement.getUnitCostBasis() + " unit: " + priceElement.getUnit()
+			+ accountBTCStat);
 		if (!priceElements.contains(priceElement)) {
-			log.error("priceElement is not included in set " + priceElements);
+			log.error("priceElement" + priceElement + " is not included in set " + priceElements);
 			throw new IllegalArgumentException();
 		}
 		Order placedOrder = orderService.bestEffortSellWithSize(ProductId.BTC_USD, accountBTCStat.btcPrice + ADJUST_BID_ASK_RANGE,
-			priceElement.getUnit(), Optional.empty());
+			priceElement.getUnit(), Optional.empty(), false);
 		if (placedOrder == null || placedOrder.getFilled_size() == 0 || placedOrder.getExecuted_value() == 0) {
 			log.info("possible due to unexpected limit price or price is not good, look for next opportunities");
-			return;
+			return false;
 		}
 		// there is some chance that only partial order settled, if the remaining part is negligible then we still remove element
 		// from priceElements set, it will eventually catch up, if not we need to modify the unit field to reflect the actual order we sold
 		double profit = placedOrder.getFilled_size() * (placedOrder.getPrice() - priceElement.getUnitCostBasis());
-		transactionLogger.writeLog("Sold with profit: " + profit + " cost basis: " + priceElement.getUnitCostBasis() + " sell price: " + placedOrder.getPrice() + placedOrder + " " + accountBTCStat);
+		transactionLogger.writeLog(
+			"Current total profit: " + totalProfit.addAndGet(profit) +
+			" Sold with profit: " + profit +
+			" cost basis: " + priceElement.getUnitCostBasis() +
+			" settled price: " + placedOrder.getPrice() + placedOrder + " " + accountBTCStat);
 		if (profit < 0) {
 			log.error("order placed: " + placedOrder + " has negative profit: " + profit);
 			if (profit < -50.0) {
@@ -218,11 +254,20 @@ public class AverageMoverTask implements Runnable {
 		}
 		double remainUnit = priceElement.getUnit() - placedOrder.getFilled_size();
 		if (remainUnit < REMAINING_UNIT_IGNORED) {
-			log.info("delete " + priceElement + " from set since remain unit: " + remainUnit + " is negligible " + placedOrder);
 			priceElements.remove(priceElement);
+			log.info("delete " + priceElement + " from set since remain unit: " + remainUnit + " is negligible " + placedOrder);
 		} else {
 			priceElement.setUnit(remainUnit);
 		}
+		transactionLogger.writeLog(getQueueInfo());
+		return true;
+	}
+
+	private String getQueueInfo() {
+		StringBuilder priceElementsInfo = new StringBuilder();
+		priceElementsInfo.append("queue info: \n");
+		priceElements.forEach(e -> priceElementsInfo.append(e.getUnitCostBasis() + " | " + e.getUnit() + "\n"));
+		return priceElementsInfo.toString();
 	}
 
 	private class AccountBTCStat {
